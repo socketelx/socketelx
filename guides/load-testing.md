@@ -19,6 +19,7 @@ wrong `--key`, `--app-id` or `--secret`).
 |---|---|---|
 | `--connections` | 1000 | WebSocket clients to open |
 | `--ramp` | 200 | New connections per second |
+| `--workers` | 1 | Number of generator processes. Connections and send rate are split between them and the results combined. Use about one per free CPU core. |
 | `--channels` | 20 | Public channels; each client joins one |
 | `--rate` | 50 | Events per second sent through the REST API |
 | `--duration` | 30 | Seconds to send events |
@@ -53,8 +54,12 @@ so treat it as a smoke test. Measure your own hardware.
 - **The script is one Node process.** It prints how many messages per second it
   has to receive. Above roughly 50,000 per second it can become the bottleneck
   instead of the server: you then see multi-second latencies and `ECONNRESET`
-  errors that say more about the generator than about the server. Raise `--rate`
-  step by step and stop reading the results once the generator is the limit.
+  errors that say more about the generator than about the server. Add
+  `--workers 4` (about one per free CPU core) to spread the work over several
+  processes, or raise `--rate` step by step and stop reading the results once the
+  generator is the limit. Run the generator on a different machine from the
+  server when you can: on one machine they compete for the same CPU, and with
+  many workers that shows up as extra latency.
 - **Failed sends** list their reason (`ECONNRESET`, `EPIPE`, an HTTP status).
   `connection problem ... non-101` during the ramp usually means the OS refused
   connections: see the open-file and `somaxconn` notes below.

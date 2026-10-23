@@ -20,9 +20,9 @@ existing deployment keeps working; if both are set, `SOCKETELX_*` wins.
 | `:redis_opts`              | none                            | `[]`               | Extra [Redix](https://hexdocs.pm/redix) options, e.g. `ssl: true`. |
 | `:webhook_retries`         | `SOCKETELX_WEBHOOK_RETRIES`        | `3`                | Retries after the first attempt. `0` turns retries off. |
 | `:webhook_retry_base_ms`   | none                            | `1000`             | First retry delay; doubles each time. |
-| `:rest_rate_limit`         | `SOCKETELX_REST_RATE_LIMIT`        | none               | Max REST API requests per second for the instance. |
-| `:client_event_rate_limit` | `SOCKETELX_CLIENT_EVENT_RATE_LIMIT`| none               | Max client events per second, per connection. |
-| `:max_connections`         | `SOCKETELX_MAX_CONNECTIONS`        | none               | Max WebSocket connections on this node. |
+| `:rest_rate_limit`         | `SOCKETELX_REST_RATE_LIMIT`        | none               | Max REST API requests per second for the instance. `0` = no limit. |
+| `:client_event_rate_limit` | `SOCKETELX_CLIENT_EVENT_RATE_LIMIT`| none               | Max client events per second, per connection. `0` = no limit. |
+| `:max_connections`         | `SOCKETELX_MAX_CONNECTIONS`        | none               | Max WebSocket connections on this node. `0` = no limit. |
 | `:batch_limit`             | `SOCKETELX_BATCH_LIMIT`            | `10`               | Max events in one `batch_events` request. Pusher's own limit is 10. |
 | `:metrics`                 | `SOCKETELX_METRICS`                | `false`            | Serve Prometheus metrics at `GET /metrics`. |
 | `:metrics_token`           | `SOCKETELX_METRICS_TOKEN`          | none               | Require `Authorization: Bearer <token>` on `/metrics`. |
@@ -131,7 +131,8 @@ payload. Two things to design for:
 
 ## Rate limits and capacity
 
-All are off by default.
+All are off by default. Setting one to `0` also means "no limit", so you can keep the
+variable in a template and turn the limit off without deleting it.
 
 - `SOCKETELX_REST_RATE_LIMIT=100` allows 100 REST API requests per second for the
   whole instance (the health check and `/metrics` are exempt). Extra requests

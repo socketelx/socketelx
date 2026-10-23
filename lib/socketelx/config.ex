@@ -27,14 +27,14 @@ defmodule Socketelx.Config do
   | `:cluster_node_basename`   | `SOCKETELX_CLUSTER_NODE_BASENAME`  | `"socketelx"` (the part before `@` when using `:cluster_dns`) |
   | `:webhook_retries`         | `SOCKETELX_WEBHOOK_RETRIES`        | `3` (retries after the first attempt; `0` disables) |
   | `:webhook_retry_base_ms`   | —                               | `1000` (delay doubles on each retry) |
-  | `:rest_rate_limit`         | `SOCKETELX_REST_RATE_LIMIT`        | none (max REST API requests per second, per instance) |
-  | `:client_event_rate_limit` | `SOCKETELX_CLIENT_EVENT_RATE_LIMIT`| none (max client events per second, per connection) |
-  | `:max_connections`         | `SOCKETELX_MAX_CONNECTIONS`        | none (max WebSocket connections on this node) |
+  | `:rest_rate_limit`         | `SOCKETELX_REST_RATE_LIMIT`        | none (max REST API requests per second, per instance; 0 = no limit) |
+  | `:client_event_rate_limit` | `SOCKETELX_CLIENT_EVENT_RATE_LIMIT`| none (max client events per second, per connection; 0 = no limit) |
+  | `:max_connections`         | `SOCKETELX_MAX_CONNECTIONS`        | none (max WebSocket connections on this node; 0 = no limit) |
   | `:batch_limit`             | `SOCKETELX_BATCH_LIMIT`            | `10` (max events per `batch_events` request) |
   | `:metrics`                 | `SOCKETELX_METRICS`                | `false` (serve Prometheus metrics at `GET /metrics`) |
   | `:metrics_token`           | `SOCKETELX_METRICS_TOKEN`          | none (if set, `/metrics` requires `Authorization: Bearer <token>`) |
   | `:allowed_origins`         | `SOCKETELX_ALLOWED_ORIGINS`        | none (every origin may connect; see below) |
-  | `:max_connections_per_ip`  | `SOCKETELX_MAX_CONNECTIONS_PER_IP` | none (max simultaneous WebSocket connections from one client IP) |
+  | `:max_connections_per_ip`  | `SOCKETELX_MAX_CONNECTIONS_PER_IP` | none (max simultaneous WebSocket connections from one client IP; 0 = no limit) |
   | `:client_ip_header`        | `SOCKETELX_CLIENT_IP_HEADER`       | none (read the client IP from this header, e.g. `cf-connecting-ip`; see below) |
   | `:webhook_queue_path`      | `SOCKETELX_WEBHOOK_QUEUE_PATH`     | none (a directory; failed webhooks are kept there and survive a restart) |
   | `:tls_certfile`            | `SOCKETELX_TLS_CERTFILE`           | none (with `:tls_keyfile`, serve HTTPS/WSS directly) |
@@ -144,15 +144,16 @@ defmodule Socketelx.Config do
       prefix: "socketelx:" <> app_id,
       webhook_retries: opt_int(opts, :webhook_retries, "WEBHOOK_RETRIES") || 3,
       webhook_retry_base_ms: Keyword.get(opts, :webhook_retry_base_ms, 1_000),
-      rest_rate_limit: opt_int(opts, :rest_rate_limit, "REST_RATE_LIMIT"),
-      client_event_rate_limit: opt_int(opts, :client_event_rate_limit, "CLIENT_EVENT_RATE_LIMIT"),
-      max_connections: opt_int(opts, :max_connections, "MAX_CONNECTIONS"),
+      rest_rate_limit: opt_limit(opts, :rest_rate_limit, "REST_RATE_LIMIT"),
+      client_event_rate_limit:
+        opt_limit(opts, :client_event_rate_limit, "CLIENT_EVENT_RATE_LIMIT"),
+      max_connections: opt_limit(opts, :max_connections, "MAX_CONNECTIONS"),
       batch_limit: opt_int(opts, :batch_limit, "BATCH_LIMIT") || 10,
       metrics: Keyword.get(opts, :metrics, env("METRICS") in ["true", "1"]),
       metrics_token: Keyword.get(opts, :metrics_token) || blank_to_nil(env("METRICS_TOKEN")),
       allowed_origins:
         parse_origins(Keyword.get(opts, :allowed_origins) || blank_to_nil(env("ALLOWED_ORIGINS"))),
-      max_connections_per_ip: opt_int(opts, :max_connections_per_ip, "MAX_CONNECTIONS_PER_IP"),
+      max_connections_per_ip: opt_limit(opts, :max_connections_per_ip, "MAX_CONNECTIONS_PER_IP"),
       client_ip_header:
         (Keyword.get(opts, :client_ip_header) || blank_to_nil(env("CLIENT_IP_HEADER")))
         |> then(&(&1 && String.downcase(&1))),
@@ -195,6 +196,14 @@ defmodule Socketelx.Config do
     do: System.get_env("SOCKETELX_" <> name) || System.get_env("PUSHER_" <> name) || default
 
   # An integer option, falling back to SOCKETELX_<env> / PUSHER_<env>. `nil` when neither is set.
+  # Limits: unset, 0 and negative numbers all mean "no limit".
+  defp opt_limit(opts, key, env_name) do
+    case opt_int(opts, key, env_name) do
+      n when is_integer(n) and n > 0 -> n
+      _ -> nil
+    end
+  end
+
   defp opt_int(opts, key, env_name) do
     case Keyword.get(opts, key) do
       nil -> env_name |> env() |> blank_to_nil() |> to_int()

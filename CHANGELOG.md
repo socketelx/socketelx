@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/), versioning
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.4.3] - 2026-10-23
+
+### Changed
+- Setting a limit to `0` now means "no limit" (`rest_rate_limit`,
+  `client_event_rate_limit`, `max_connections`, `max_connections_per_ip`, in options
+  and in the matching `SOCKETELX_*` variables). Before, `0` refused every request or
+  connection. Negative numbers also mean no limit. If you used `0` on purpose to block
+  everything, use `1` instead.
+- `bench/load.mjs`: new `--workers N` runs the generator in several processes, so a
+  single Node process no longer caps the test at about 50k messages per second.
+
 ## [0.4.2] - 2026-10-17
 
 ### Changed
