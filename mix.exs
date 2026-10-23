@@ -2,7 +2,7 @@ defmodule Socketelx.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/socketelx/socketelx"
-  @version "0.4.3"
+  @version "0.5.0"
 
   def project do
     [

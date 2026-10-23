@@ -2,7 +2,9 @@ defmodule Socketelx.ClusterRedisTest do
   @moduledoc """
   Two (or three) real `Socketelx` nodes in one BEAM, sharing one real Redis,
   driven the way production drives them: websocket clients over TCP and
-  Laravel-style signed REST calls. Run with `SOCKETELX_TEST_REDIS_URL` set.
+  Laravel-style signed REST calls. Run with `SOCKETELX_TEST_REDIS_URL` set. Also
+  set `SOCKETELX_TEST_REDIS_CLUSTER=true` (and point the URL at any node of a Redis
+  Cluster) to run the very same tests through the Redis Cluster code path.
   """
   use ExUnit.Case, async: false
 
@@ -347,7 +349,8 @@ defmodule Socketelx.ClusterRedisTest do
          app_id: "down",
          app_key: @key,
          app_secret: @secret,
-         redis_url: "redis://127.0.0.1:1"},
+         redis_url: "redis://127.0.0.1:1",
+         redis_cluster: cluster?()},
         id: name
       )
     )
@@ -394,6 +397,7 @@ defmodule Socketelx.ClusterRedisTest do
   end
 
   defp redis_url, do: System.fetch_env!("SOCKETELX_TEST_REDIS_URL")
+  defp cluster?, do: System.get_env("SOCKETELX_TEST_REDIS_CLUSTER") in ["true", "1"]
 
   defp start_node(label, app_id), do: label |> start_node_with_pid(app_id) |> elem(0)
 
@@ -410,7 +414,8 @@ defmodule Socketelx.ClusterRedisTest do
            app_id: app_id,
            app_key: @key,
            app_secret: @secret,
-           redis_url: redis_url()},
+           redis_url: redis_url(),
+           redis_cluster: cluster?()},
           id: name,
           restart: :temporary
         )
@@ -522,16 +527,34 @@ defmodule Socketelx.ClusterRedisTest do
   defp flush_app(app_id) do
     {:ok, conn} = Redix.start_link(redis_url())
 
-    Redix.command!(
-      conn,
-      [
-        "EVAL",
-        "for _, k in ipairs(redis.call('KEYS', ARGV[1])) do redis.call('DEL', k) end",
-        "0",
-        "socketelx:#{app_id}:*"
-      ]
-    )
+    # every master holds part of the keyspace in cluster mode; a plain Redis is its own master
+    masters =
+      if cluster?() do
+        for [_from, _to, [host, port | _] | _] <- Redix.command!(conn, ["CLUSTER", "SLOTS"]),
+            uniq: true,
+            do: {host, port}
+      else
+        [nil]
+      end
+
+    for master <- masters do
+      {:ok, node} =
+        case master do
+          nil -> Redix.start_link(redis_url())
+          {host, port} -> Redix.start_link(redis_url(), host: host, port: port)
+        end
+
+      prefix = if cluster?(), do: "{socketelx:#{app_id}}", else: "socketelx:#{app_id}"
+      scan_and_delete(node, "0", prefix <> ":*")
+      Redix.stop(node)
+    end
 
     Redix.stop(conn)
+  end
+
+  defp scan_and_delete(conn, cursor, pattern) do
+    [next, keys] = Redix.command!(conn, ["SCAN", cursor, "MATCH", pattern, "COUNT", "1000"])
+    Enum.each(keys, &Redix.command!(conn, ["DEL", &1]))
+    if next != "0", do: scan_and_delete(conn, next, pattern)
   end
 end

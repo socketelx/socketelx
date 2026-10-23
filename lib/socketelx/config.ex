@@ -21,6 +21,8 @@ defmodule Socketelx.Config do
   | `:client_messages_enabled` | `SOCKETELX_ENABLE_CLIENT_MESSAGES` | `true`       |
   | `:redis_url`               | `SOCKETELX_REDIS_URL`              | none (single node) |
   | `:redis_opts`              | —                               | `[]` (extra `Redix` options, e.g. `ssl: true`) |
+  | `:redis_cluster`           | `SOCKETELX_REDIS_CLUSTER`          | `false` (the Redis URL points at a Redis Cluster; see `Socketelx.Backend.Redis`) |
+  | `:redis_cluster_nodes`     | `SOCKETELX_REDIS_CLUSTER_NODES`    | none (extra `host:port` seeds to find the cluster if the URL's node is down) |
   | `:cluster`                | `SOCKETELX_CLUSTER`                | none (set to `erlang` for the experimental Redis-free cluster mode) |
   | `:cluster_nodes`           | `SOCKETELX_CLUSTER_NODES`          | none (comma-separated Erlang node names to connect to, e.g. `socketelx@host1,socketelx@host2`) |
   | `:cluster_dns`             | `SOCKETELX_CLUSTER_DNS`            | none (a hostname resolving to every peer; nodes are named `<basename>@<ip>`) |
@@ -77,6 +79,8 @@ defmodule Socketelx.Config do
     :backend,
     :redis_url,
     :redis_opts,
+    :redis_cluster,
+    :redis_cluster_nodes,
     :cluster,
     :cluster_nodes,
     :cluster_dns,
@@ -113,6 +117,18 @@ defmodule Socketelx.Config do
             "Socketelx[#{inspect(name)}]: set either a Redis URL or `cluster: :erlang`, not both"
     end
 
+    redis_cluster = bool_opt(opts, :redis_cluster, "REDIS_CLUSTER")
+
+    redis_cluster_nodes =
+      parse_seeds(
+        Keyword.get(opts, :redis_cluster_nodes) || blank_to_nil(env("REDIS_CLUSTER_NODES"))
+      )
+
+    if redis_cluster and is_nil(redis_url) do
+      raise ArgumentError,
+            "Socketelx[#{inspect(name)}]: `redis_cluster` needs a Redis URL (`redis_url` / SOCKETELX_REDIS_URL)"
+    end
+
     config = %__MODULE__{
       app_key: Keyword.get(opts, :app_key) || env("APP_KEY", "app-key"),
       app_secret: Keyword.get(opts, :app_secret) || env("APP_SECRET", "app-secret"),
@@ -129,6 +145,8 @@ defmodule Socketelx.Config do
         end,
       redis_url: redis_url,
       redis_opts: Keyword.get(opts, :redis_opts, []),
+      redis_cluster: redis_cluster,
+      redis_cluster_nodes: redis_cluster_nodes,
       cluster: cluster,
       cluster_nodes:
         parse_nodes(Keyword.get(opts, :cluster_nodes) || blank_to_nil(env("CLUSTER_NODES"))),
@@ -141,7 +159,9 @@ defmodule Socketelx.Config do
       # notice (via a heartbeat key) when a node has died.
       node_id: :crypto.strong_rand_bytes(6) |> Base.encode16(case: :lower),
       # Several apps/environments can share one Redis without colliding.
-      prefix: "socketelx:" <> app_id,
+      # In Redis Cluster mode the whole prefix is a hash tag ({...}), which puts all of an
+      # app's keys in one slot so the multi-key Lua scripts keep working.
+      prefix: if(redis_cluster, do: "{socketelx:" <> app_id <> "}", else: "socketelx:" <> app_id),
       webhook_retries: opt_int(opts, :webhook_retries, "WEBHOOK_RETRIES") || 3,
       webhook_retry_base_ms: Keyword.get(opts, :webhook_retry_base_ms, 1_000),
       rest_rate_limit: opt_limit(opts, :rest_rate_limit, "REST_RATE_LIMIT"),
@@ -229,6 +249,30 @@ defmodule Socketelx.Config do
   defp parse_cluster(other) do
     raise ArgumentError,
           "unknown cluster mode #{inspect(other)}; the only supported value is :erlang"
+  end
+
+  defp bool_opt(opts, key, env_name) do
+    case Keyword.get(opts, key) do
+      nil -> env(env_name) in ["true", "1"]
+      value -> value == true
+    end
+  end
+
+  # "host:port,host:port" or [{host, port}] or ["host:port"] -> [{charlist-free host, port}]
+  defp parse_seeds(nil), do: []
+
+  defp parse_seeds(string) when is_binary(string),
+    do: string |> String.split(",", trim: true) |> parse_seeds()
+
+  defp parse_seeds(list) when is_list(list), do: Enum.map(list, &to_seed/1)
+
+  defp to_seed({host, port}), do: {to_string(host), port}
+
+  defp to_seed(string) when is_binary(string) do
+    case String.split(String.trim(string), ":") do
+      [host, port] -> {host, String.to_integer(port)}
+      [host] -> {host, 6379}
+    end
   end
 
   defp parse_nodes(nil), do: []

@@ -17,6 +17,8 @@ existing deployment keeps working; if both are set, `SOCKETELX_*` wins.
 | `:webhook_url`             | `SOCKETELX_WEBHOOK_URL`            | none               | Where webhooks are POSTed. |
 | `:client_messages_enabled` | `SOCKETELX_ENABLE_CLIENT_MESSAGES` | `true`             | `false` rejects all `client-*` events. |
 | `:redis_url`               | `SOCKETELX_REDIS_URL`              | none               | Enables multi-server mode. `rediss://` for TLS. |
+| `:redis_cluster`           | `SOCKETELX_REDIS_CLUSTER`          | `false`            | The Redis URL points at a Redis Cluster. See [Multi-server](multi-server.md#with-redis-cluster). |
+| `:redis_cluster_nodes`     | `SOCKETELX_REDIS_CLUSTER_NODES`    | none               | More `host:port` nodes to ask if the URL's node is down, comma-separated. |
 | `:redis_opts`              | none                            | `[]`               | Extra [Redix](https://hexdocs.pm/redix) options, e.g. `ssl: true`. |
 | `:webhook_retries`         | `SOCKETELX_WEBHOOK_RETRIES`        | `3`                | Retries after the first attempt. `0` turns retries off. |
 | `:webhook_retry_base_ms`   | none                            | `1000`             | First retry delay; doubles each time. |

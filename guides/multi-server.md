@@ -65,9 +65,51 @@ Embedded: `{Socketelx, name: MyApp.Socketelx, redis_url: "redis://localhost:6379
 - Joining or leaving a presence channel scans that channel's members inside
   Redis. That is fine for normal presence channels (Pusher itself caps them at
   100 members) but not for huge ones.
-- Redis Cluster (sharded) is not supported. Use a single endpoint: plain,
-  Sentinel, or a managed primary/replica service.
 - Keys are prefixed `socketelx:<app_id>`, so several apps can share one Redis.
+- Redis Cluster works too, see the next section. Without `redis_cluster`, use a
+  single endpoint: plain, Sentinel, or a managed primary/replica service.
+
+## With Redis Cluster
+
+Use this when your Redis is a Redis Cluster (several shards), for example a managed
+service in "cluster mode". Add one setting on every node:
+
+```
+SOCKETELX_REDIS_URL=redis://:password@redis-node-1:6379   # any one node of the cluster
+SOCKETELX_REDIS_CLUSTER=true
+SOCKETELX_REDIS_CLUSTER_NODES=redis-node-2:6379,redis-node-3:6379   # optional
+```
+
+Embedded: `redis_url: "redis://..."`, `redis_cluster: true`, and optionally
+`redis_cluster_nodes: ["redis-node-2:6379"]`.
+
+The URL is the first place Socketelx asks where things are, and it uses the same
+username, password and TLS settings for every node it then discovers. The optional
+node list gives it other places to ask if that first node is down at startup.
+
+**How it works.** All the keys of one app share a hash tag (`{socketelx:<app_id>}`),
+so Redis keeps them in one slot, on one node. Socketelx finds that node with
+`CLUSTER SLOTS`, talks to it, and follows it when it changes: a failover, a
+resharding, or a node going away. Broadcasts use ordinary pub/sub, which Redis
+Cluster passes on to every node.
+
+**What to expect.**
+
+- Everything in "What is shared" and "When things fail" above still applies.
+- A failover or a move of the slot pauses delivery between Socketelx nodes for a few
+  seconds: the time Redis itself needs to elect a new master, plus up to about two
+  seconds for Socketelx to notice. Events sent in that window reach only the sockets
+  on the node that received them (at-most-once, like everything here). In one test
+  (two Socketelx nodes, the owning master killed with `kill -9`, Redis
+  `cluster-node-timeout` 3 seconds) deliveries between the nodes were back after about
+  6 seconds and nothing needed restarting.
+- One app's state lives on **one** shard (plus its replicas). The other shards hold
+  none of it. State is small (a few keys per channel), so this is not a limit on how
+  many connections you can serve, but adding shards does not add capacity for a
+  single app. With several apps (see [Several apps](multi-app.md)) each app has its
+  own tag and may land on a different shard.
+- Only database 0 exists in a cluster. Leave any `/N` off the URL.
+- Not needed: sticky sessions, or anything in front of Redis.
 
 ## Checking it works
 

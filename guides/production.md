@@ -122,6 +122,27 @@ freed for reuse instead of handing it straight back to the OS. Set a container m
 limit of at least twice your expected steady-state use, or the container may be killed
 under a burst. Watch `socketelx_connections` next to the process's memory.
 
+## CPU cores
+
+There is no worker setting to tune. Socketelx runs on the Erlang VM, which starts one
+scheduler thread per CPU core it can see and spreads the connections (each one is its
+own lightweight process) across them automatically. A server with 4 cores uses all 4.
+
+Two things to check when you deploy:
+
+- **Containers.** Recent Erlang versions respect a Docker or Kubernetes CPU limit
+  (`--cpus 2`, `resources.limits.cpu`) and start that many schedulers. To see what the
+  VM chose, run `bin/socketelx remote` and then `:erlang.system_info(:schedulers_online)`.
+  If it shows more than the CPU you pay for, set it yourself with
+  `ERL_FLAGS="+S 2:2"` (schedulers : online schedulers).
+- **Size by cores, not by count.** More cores raise how many messages per second one
+  node can deliver, and more nodes do the same with more machines. See
+  [Capacity planning](capacity-planning.md) for the arithmetic.
+
+The `--workers` option in `bench/load.mjs` is unrelated: it only controls how many
+processes the *test generator* uses, because one Node process is single-threaded. It
+does not change the server.
+
 ## Rolling deploys and restarts
 
 - Restart nodes **one at a time** and wait for `socketelx_connections` on the restarted
@@ -146,6 +167,11 @@ Turn on `SOCKETELX_METRICS=true` and scrape `/metrics` from every node. Useful a
 | process memory | grows steadily without more connections |
 
 ## Redis or Erlang nodes?
+
+> **Redis Cluster:** if your Redis is a Redis Cluster, set `SOCKETELX_REDIS_CLUSTER=true`
+> (see [Multi-server](multi-server.md#with-redis-cluster)). Plan for a few seconds of paused
+> delivery between nodes whenever Redis fails over, and keep at least one replica per shard.
+
 
 For several servers, Redis is the better-tested path and keeps nodes stateless. The
 Erlang cluster mode needs no extra service but is experimental. See

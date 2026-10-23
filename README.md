@@ -32,8 +32,8 @@ to browsers and phones as they happen.
 - Signed webhooks with retries, optionally kept on disk across restarts
 - Several apps (id, key, secret) in one server, fully isolated
 - Allowed origins, optional rate limits, connection caps (also per IP), built-in TLS, and Prometheus metrics
-- Multi-server mode through Redis (optional), or Erlang clustering with no
-  Redis (**experimental**)
+- Multi-server mode through Redis, including Redis Cluster (optional), or
+  Erlang clustering with no Redis (**experimental**)
 - Graceful shutdown: clients are told to reconnect before a node exits
 
 It works with the clients and libraries you probably already use: `pusher-js`,
@@ -173,7 +173,7 @@ Not verified yet: behaviour at very large scale (see
 example, and Elixir versions other than the ones CI uses.
 
 Not implemented: terminating a user's connections through the API, the sign-in
-watchlist, Redis Cluster. Delivery is at-most-once, like Pusher. Details in [Protocol support](guides/protocol-support.md).
+watchlist. Delivery is at-most-once, like Pusher. Details in [Protocol support](guides/protocol-support.md).
 
 ## Development and contributing
 

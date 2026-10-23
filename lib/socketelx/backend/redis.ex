@@ -19,11 +19,17 @@ defmodule Socketelx.Backend.Redis do
   at-most-once, like Pusher itself: messages published while a node is
   disconnected from Redis are not replayed.
 
-  ## Not supported
+  ## Redis Cluster
 
-  Redis Cluster (multi-key Lua scripts touch keys in different slots).
-  Use a single Redis endpoint — standalone, Sentinel, or a managed
-  primary/replica service all work.
+  Set `redis_cluster: true` (`SOCKETELX_REDIS_CLUSTER=true`) and point the Redis URL at
+  any node of the cluster. Every key of an app then carries the same hash tag, so they
+  live in one slot, on one node: the Lua scripts keep working, and the app follows
+  that slot through failovers and resharding (see `Socketelx.Backend.Redis.Topology`).
+  Different apps get different tags and may land on different nodes. Broadcasts use
+  ordinary pub/sub, which Redis Cluster propagates to every node.
+
+  Without `redis_cluster`, use a single Redis endpoint: standalone, Sentinel, or a
+  managed primary/replica service all work.
   """
   @behaviour Socketelx.Backend
 
@@ -116,6 +122,18 @@ defmodule Socketelx.Backend.Redis do
   # ---- Backend callbacks ----
 
   @impl true
+  def child_specs(name, %{redis_cluster: true}) do
+    [
+      %{
+        id: {:redis_topology, name},
+        start: {__MODULE__.Topology, :start_link, [name]},
+        type: :worker
+      },
+      subscriber_spec(name),
+      janitor_spec(name)
+    ]
+  end
+
   def child_specs(name, config) do
     redix_opts = [sync_connect: false] ++ config.redis_opts
 
@@ -132,19 +150,25 @@ defmodule Socketelx.Backend.Redis do
            [config.redis_url, [name: Naming.redis_pubsub(name)] ++ redix_opts]},
         type: :worker
       },
-      %{
-        id: {:redis_subscriber, name},
-        start: {__MODULE__.Subscriber, :start_link, [name]},
-        type: :worker
-      },
-      %{
-        id: {:redis_janitor, name},
-        start: {__MODULE__.Janitor, :start_link, [name]},
-        type: :worker,
-        shutdown: 5_000
-      }
+      subscriber_spec(name),
+      janitor_spec(name)
     ]
   end
+
+  defp subscriber_spec(name),
+    do: %{
+      id: {:redis_subscriber, name},
+      start: {__MODULE__.Subscriber, :start_link, [name]},
+      type: :worker
+    }
+
+  defp janitor_spec(name),
+    do: %{
+      id: {:redis_janitor, name},
+      start: {__MODULE__.Janitor, :start_link, [name]},
+      type: :worker,
+      shutdown: 5_000
+    }
 
   @impl true
   def publish(name, channel, encoded, exclude_socket_id) do
@@ -351,18 +375,88 @@ defmodule Socketelx.Backend.Redis do
 
   @doc false
   def command(name, command) do
-    Redix.command(Naming.redis(name), command, timeout: @timeout)
+    run(name, fn -> Redix.command(Naming.redis(name), command, timeout: @timeout) end)
+  end
+
+  @doc false
+  def pipeline(name, commands) do
+    run(name, fn -> Redix.pipeline(Naming.redis(name), commands, timeout: @timeout) end)
+  end
+
+  # Runs one Redis call. Single node: just the call. Cluster mode: a redirect answer
+  # (MOVED and friends) means the command did NOT run, so it is safe to ask the topology
+  # manager for the new owner and run it once more. A broken connection may or may not
+  # have run it, so it is not retried (a retry could count a join twice); the manager is
+  # only told to look for the new owner so the next call works.
+  defp run(name, fun) do
+    result = safe(fun)
+
+    if Config.get(name).redis_cluster do
+      cond do
+        redirected?(result) ->
+          case __MODULE__.Topology.refresh(name, moved_hint(result)) do
+            :ok -> safe(fun)
+            :error -> result
+          end
+
+        match?({:error, %Redix.ConnectionError{}}, result) or match?({:error, {:exit, _}}, result) ->
+          __MODULE__.Topology.refresh_async(name)
+          result
+
+        true ->
+          result
+      end
+    else
+      result
+    end
+  end
+
+  defp safe(fun) do
+    fun.()
   catch
     # the Redix process isn't running (e.g. during shutdown)
     :exit, reason -> {:error, {:exit, reason}}
   end
 
-  @doc false
-  def pipeline(name, commands) do
-    Redix.pipeline(Naming.redis(name), commands, timeout: @timeout)
-  catch
-    :exit, reason -> {:error, {:exit, reason}}
+  @redirects ["MOVED", "ASK", "CLUSTERDOWN", "READONLY", "TRYAGAIN"]
+
+  # "MOVED 5863 127.0.0.1:7006" -> {"127.0.0.1", 7006}
+  defp moved_hint({:error, %Redix.Error{message: m}}), do: parse_moved(m)
+
+  defp moved_hint({:ok, results}) when is_list(results) do
+    Enum.find_value(results, fn
+      %Redix.Error{message: m} -> parse_moved(m)
+      _ -> nil
+    end)
   end
+
+  defp moved_hint(_), do: nil
+
+  defp parse_moved("MOVED " <> rest) do
+    with [_slot, address] <- String.split(rest, " ", parts: 2),
+         [port | host_parts] when host_parts != [] <-
+           address |> String.split(":") |> Enum.reverse(),
+         {port, ""} <- Integer.parse(port),
+         host when host != "" <- host_parts |> Enum.reverse() |> Enum.join(":") do
+      {host, port}
+    else
+      _ -> nil
+    end
+  end
+
+  defp parse_moved(_), do: nil
+
+  defp redirected?({:error, %Redix.Error{message: m}}), do: redirect_message?(m)
+
+  defp redirected?({:ok, results}) when is_list(results),
+    do: Enum.any?(results, &redirect_result?/1)
+
+  defp redirected?(_), do: false
+
+  defp redirect_result?(%Redix.Error{message: m}), do: redirect_message?(m)
+  defp redirect_result?(_), do: false
+
+  defp redirect_message?(m), do: String.starts_with?(m, @redirects)
 
   @doc false
   def node_ttl_ms, do: @node_ttl_ms

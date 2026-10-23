@@ -23,7 +23,8 @@ defmodule Socketelx.Backend.Redis.Subscriber do
   def init(name) do
     config = Config.get(name)
 
-    {:ok, %{name: name, node_id: config.node_id, channel: Redis.events_channel(config)},
+    {:ok,
+     %{name: name, node_id: config.node_id, channel: Redis.events_channel(config), pubsub: nil},
      {:continue, :subscribe}}
   end
 
@@ -32,6 +33,15 @@ defmodule Socketelx.Backend.Redis.Subscriber do
 
   @impl true
   def handle_info(:retry_subscribe, state), do: {:noreply, subscribe(state)}
+
+  # Redis Cluster mode: the topology manager moved to another node, so the old PubSub
+  # connection (and our subscription on it) is gone. Skip it if we already subscribed on
+  # the current one.
+  def handle_info(:pubsub_replaced, state) do
+    if Process.whereis(Naming.redis_pubsub(state.name)) == state.pubsub,
+      do: {:noreply, state},
+      else: {:noreply, subscribe(state)}
+  end
 
   def handle_info({:redix_pubsub, _pubsub, _ref, :message, %{payload: payload}}, state) do
     case Redis.decode_envelope(payload) do
@@ -65,8 +75,14 @@ defmodule Socketelx.Backend.Redis.Subscriber do
   def handle_info(_other, state), do: {:noreply, state}
 
   defp subscribe(state) do
-    case Redix.PubSub.subscribe(Naming.redis_pubsub(state.name), state.channel, self()) do
+    pubsub = Process.whereis(Naming.redis_pubsub(state.name))
+
+    case pubsub && Redix.PubSub.subscribe(pubsub, state.channel, self()) do
       {:ok, _ref} ->
+        %{state | pubsub: pubsub}
+
+      nil ->
+        Process.send_after(self(), :retry_subscribe, @retry_ms)
         state
 
       {:error, reason} ->

@@ -45,3 +45,45 @@ jobs:
       - run: mix deps.get
       - run: mix format --check-formatted
       - run: mix test
+
+  # The same Redis tests again, through the Redis Cluster code path, against a real cluster
+  # (3 masters, 3 replicas) plus the failover tests in test/socketelx/redis_cluster_test.exs.
+  test-redis-cluster:
+    runs-on: ubuntu-latest
+    env:
+      SOCKETELX_TEST_REDIS_URL: redis://127.0.0.1:7001
+      SOCKETELX_TEST_REDIS_CLUSTER: "true"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start a Redis Cluster
+        run: |
+          for p in 7001 7002 7003 7004 7005 7006; do
+            docker run -d --name redis-$p --network host redis:7 \
+              redis-server --port $p --cluster-enabled yes --cluster-node-timeout 3000 \
+              --cluster-config-file nodes.conf --appendonly no --save ""
+          done
+          sleep 3
+          docker run --rm --network host redis:7 redis-cli --cluster create \
+            127.0.0.1:7001 127.0.0.1:7002 127.0.0.1:7003 127.0.0.1:7004 127.0.0.1:7005 127.0.0.1:7006 \
+            --cluster-replicas 1 --cluster-yes
+          sleep 3
+          docker run --rm --network host redis:7 redis-cli -p 7001 cluster info | head -1
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: "26"
+          elixir-version: "1.17"
+
+      - name: Cache deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - run: mix deps.get
+      - run: mix test test/socketelx/cluster_redis_test.exs test/socketelx/redis_cluster_test.exs test/socketelx/redis_topology_test.exs

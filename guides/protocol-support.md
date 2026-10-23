@@ -59,5 +59,4 @@ across restarts (see
   and the sign-in watchlist (online/offline events). Unknown events are
   silently ignored.
 - per-IP *request* rate limits (the per-IP limit counts WebSocket connections)
-- Redis Cluster (a single Redis, or Sentinel/managed Redis behind one address, works)
 - message replay or caching channels: delivery is at-most-once

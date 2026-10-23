@@ -16,8 +16,14 @@ distributed? =
       _, _ -> false
     end
 
+# The :redis_cluster tests also need SOCKETELX_TEST_REDIS_CLUSTER=true and a URL that
+# points at a node of a real Redis Cluster (at least 3 masters, each with a replica).
 exclude =
   if(System.get_env("SOCKETELX_TEST_REDIS_URL"), do: [], else: [:redis]) ++
+    if(System.get_env("SOCKETELX_TEST_REDIS_CLUSTER") in ["true", "1"],
+      do: [],
+      else: [:redis_cluster]
+    ) ++
     if(distributed?, do: [], else: [:peer])
 
 ExUnit.start(exclude: exclude)

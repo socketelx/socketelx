@@ -4,6 +4,25 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/), versioning
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.0] - 2026-10-23
+
+### Added
+- **Redis Cluster support.** Set `redis_cluster: true` (`SOCKETELX_REDIS_CLUSTER=true`)
+  and point `redis_url` at any node of the cluster; `redis_cluster_nodes`
+  (`SOCKETELX_REDIS_CLUSTER_NODES`) adds more places to look. All of an app's keys carry
+  one hash tag, so they stay in one slot and the atomic presence and occupancy scripts
+  keep working. Socketelx finds the node that owns the slot, follows it through
+  failovers and resharding, and moves its pub/sub subscription with it. Tested against a
+  real 3-master, 3-replica cluster, including a manual failover and killing the owning
+  master under load. Standalone Redis, Sentinel and single-endpoint managed services work
+  as before and are unchanged. See [Multi-server](guides/multi-server.md#with-redis-cluster).
+- CI runs the Redis tests a second time against a real Redis Cluster.
+
+### Notes
+- One app's state lives on one shard. Several apps can spread over shards.
+- Delivery between nodes pauses for a few seconds during a Redis failover, like any
+  other Redis interruption. Delivery is still at-most-once.
+
 ## [0.4.3] - 2026-10-23
 
 ### Changed
@@ -14,6 +33,7 @@ follows [Semantic Versioning](https://semver.org/).
   everything, use `1` instead.
 - `bench/load.mjs`: new `--workers N` runs the generator in several processes, so a
   single Node process no longer caps the test at about 50k messages per second.
+- *Going to production* guide: new section on CPU cores and Erlang schedulers.
 
 ## [0.4.2] - 2026-10-17
 
