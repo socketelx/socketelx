@@ -80,13 +80,17 @@ defmodule Socketelx.HttpRouter do
   end
 
   post "/apps/:app_id/events" do
-    {:ok, body, conn} = Plug.Conn.read_body(conn)
-    handle_trigger(conn, app_id, body)
+    case read_limited_body(conn) do
+      {:ok, body, conn} -> handle_trigger(conn, app_id, body)
+      {:too_large, conn} -> too_large(conn)
+    end
   end
 
   post "/apps/:app_id/batch_events" do
-    {:ok, body, conn} = Plug.Conn.read_body(conn)
-    handle_batch(conn, app_id, body)
+    case read_limited_body(conn) do
+      {:ok, body, conn} -> handle_batch(conn, app_id, body)
+      {:too_large, conn} -> too_large(conn)
+    end
   end
 
   get "/apps/:app_id/channels" do
@@ -104,6 +108,20 @@ defmodule Socketelx.HttpRouter do
   match _ do
     send_json(conn, 404, %{error: "not found"})
   end
+
+  # The body is read before the signature is checked, so cap it: Pusher's own limit is 10 KB
+  # per event and 10 events per batch, and this leaves plenty of room above that.
+  @max_body_bytes 1_000_000
+
+  defp read_limited_body(conn) do
+    case Plug.Conn.read_body(conn, length: @max_body_bytes) do
+      {:ok, body, conn} -> {:ok, body, conn}
+      {:more, _partial, conn} -> {:too_large, conn}
+      {:error, _reason} -> {:too_large, conn}
+    end
+  end
+
+  defp too_large(conn), do: conn |> send_json(413, %{error: "request body too large"}) |> halt()
 
   # Applies to the REST API only (not the health check or metrics). Runs
   # before signature checks so a flood of bad requests is cut off cheaply.

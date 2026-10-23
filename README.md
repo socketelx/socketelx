@@ -88,7 +88,7 @@ the whole thing.
 
 ```elixir
 # mix.exs
-{:socketelx, "~> 0.2"}
+{:socketelx, "~> 0.5"}
 
 # lib/my_app/application.ex
 children = [

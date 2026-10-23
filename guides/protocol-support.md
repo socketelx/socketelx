@@ -16,6 +16,9 @@ anything else is unsupported.
 - `pusher:ping` / `pusher:pong`
 - client events (`client-*`) on private and presence channels
 - idle connections are closed after 60 s of silence
+- size limits: a WebSocket frame over 100 KB closes the connection (code 1009) and a
+  REST body over 1 MB gets `413`. Pusher's own limits (10 KB per event) are lower and are
+  not enforced here
 - user sign-in (`pusher:signin`, `pusher:signin_success`) and events to a user
   through the channel `#server-to-user-<id>`
 - browser origin checks (`:allowed_origins`), per-IP connection limit

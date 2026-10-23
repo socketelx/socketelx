@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/), versioning
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.1] - 2026-10-23
+
+### Fixed
+- REST request bodies are capped at 1 MB; a bigger one gets `413`. Before, the body was
+  read in full (up to Plug's 8 MB) before the signature was checked, and anything
+  larger crashed the request with a 500.
+- WebSocket frames are capped at 100 KB; a bigger one closes the connection (code
+  1009). Cowboy's default is no limit, so one client could make the server buffer an
+  arbitrarily large frame. Real Pusher frames are a few hundred bytes (client events
+  are limited to 10 KB by Pusher).
+
 ## [0.5.0] - 2026-10-23
 
 ### Added

@@ -23,6 +23,9 @@ defmodule Socketelx.WsHandler do
   # server's own idle timeout.
   @activity_timeout_s 30
   @idle_timeout_ms @activity_timeout_s * 2 * 1_000
+  # Cowboy's default is no limit. Real frames are tiny (Pusher caps client events at 10 KB), so
+  # a bigger one is an attack or a bug: Cowboy closes the connection with code 1009.
+  @max_frame_bytes 100_000
 
   # ---- cowboy_websocket callbacks ----
 
@@ -59,7 +62,8 @@ defmodule Socketelx.WsHandler do
       ce_count: 0
     }
 
-    {:cowboy_websocket, req, state, %{idle_timeout: @idle_timeout_ms}}
+    {:cowboy_websocket, req, state,
+     %{idle_timeout: @idle_timeout_ms, max_frame_size: @max_frame_bytes}}
   end
 
   @impl :cowboy_websocket

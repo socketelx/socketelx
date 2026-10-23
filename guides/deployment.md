@@ -11,17 +11,17 @@ docker build -t socketelx .
 
 ### Publishing the image
 
-Pushing a git tag like `v0.1.0` runs `.github/workflows/docker-publish.yml`,
-which pushes `0.1.0`, `0.1` and `latest` to GitHub Container Registry. To also
+Pushing a git tag like `v0.5.1` runs `.github/workflows/docker-publish.yml`,
+which pushes `0.5.1`, `0.5` and `latest` to GitHub Container Registry. To also
 publish to Docker Hub, add a repository variable `DOCKERHUB_USERNAME` and a
 secret `DOCKERHUB_TOKEN` (a Docker Hub access token with Read & Write) under
 Settings > Secrets and variables > Actions. The image is named
-`<username>/socketelx`. To push by hand instead:
+`socketelx/socketelx`. To push by hand instead:
 
 ```bash
-docker build -t YOUR_USER/socketelx:0.1.0 -t YOUR_USER/socketelx:latest .
+docker build -t socketelx/socketelx:0.5.1 -t socketelx/socketelx:latest .
 docker login
-docker push YOUR_USER/socketelx:0.1.0 && docker push YOUR_USER/socketelx:latest
+docker push socketelx/socketelx:0.5.1 && docker push socketelx/socketelx:latest
 ```
 
 The image is amd64 only unless you build with `docker buildx --platform
