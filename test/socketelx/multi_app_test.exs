@@ -31,7 +31,7 @@ defmodule Socketelx.MultiAppTest do
     )
   end
 
-  defp open(port, key, headers \\ []) do
+  defp open(port, key, headers) do
     {:ok, client} = TestWsClient.start(port, key, self(), headers: headers)
     client
   end
