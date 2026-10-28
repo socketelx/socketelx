@@ -93,6 +93,13 @@ defmodule Socketelx.HttpRouter do
     end
   end
 
+  post "/apps/:app_id/users/:user_id/terminate_connections" do
+    case read_limited_body(conn) do
+      {:ok, body, conn} -> handle_terminate_user(conn, app_id, user_id, body)
+      {:too_large, conn} -> too_large(conn)
+    end
+  end
+
   get "/apps/:app_id/channels" do
     handle_channel_list(conn, app_id)
   end
@@ -169,6 +176,20 @@ defmodule Socketelx.HttpRouter do
       :unauthorized -> send_json(conn, 401, %{error: "invalid signature"})
       {:error, _} -> send_json(conn, 400, %{error: "invalid payload"})
       _ -> send_json(conn, 400, %{error: "bad request"})
+    end
+  end
+
+  # Pusher libraries send `{}` (with its body_md5); an empty body is accepted too.
+  defp handle_terminate_user(conn, app_id, user_id, body) do
+    name = conn.private.socketelx_instance
+
+    case authorize(conn, "POST", app_id, if(body == "", do: nil, else: body)) do
+      :ok ->
+        Cluster.terminate_user(name, user_id)
+        send_json(conn, 200, %{})
+
+      :unauthorized ->
+        send_json(conn, 401, %{error: "invalid signature"})
     end
   end
 

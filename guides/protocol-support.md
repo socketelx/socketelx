@@ -19,6 +19,8 @@ anything else is unsupported.
 - size limits: a WebSocket frame over 100 KB closes the connection (code 1009) and a
   REST body over 1 MB gets `413`. Pusher's own limits (10 KB per event) are lower and are
   not enforced here
+- terminating a signed-in user's connections: `POST /apps/:app_id/users/:user_id/terminate_connections`,
+  or `Socketelx.terminate_user_connections/3` from Elixir
 - user sign-in (`pusher:signin`, `pusher:signin_success`) and events to a user
   through the channel `#server-to-user-<id>`
 - browser origin checks (`:allowed_origins`), per-IP connection limit
@@ -33,6 +35,7 @@ anything else is unsupported.
 | `GET /apps/:app_id/channels` | List occupied channels. `filter_by_prefix`, and `info=user_count` with `filter_by_prefix=presence-` |
 | `GET /apps/:app_id/channels/:channel` | Occupancy and subscription count (and `user_count` for presence channels) |
 | `GET /apps/:app_id/channels/:channel/users` | Ids of the users in a presence channel |
+| `POST /apps/:app_id/users/:user_id/terminate_connections` | Close all connections of a signed-in user on every node (body `{}`) |
 | `GET /metrics` | Prometheus metrics, off unless enabled; see [Configuration](configuration.md#metrics) |
 
 REST requests are signed like Pusher's API: sorted query parameters,
@@ -58,8 +61,7 @@ across restarts (see
 
 ## Not implemented
 
-- terminating a user's connections (`POST /users/:id/terminate_connections`)
-  and the sign-in watchlist (online/offline events). Unknown events are
+- the sign-in watchlist (online/offline events). Unknown events are
   silently ignored.
 - per-IP *request* rate limits (the per-IP limit counts WebSocket connections)
 - message replay or caching channels: delivery is at-most-once

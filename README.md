@@ -28,7 +28,8 @@ to browsers and phones as they happen.
 - Presence that counts a user once across tabs and devices
 - Client events (`client-*`) for things like typing indicators
 - REST API: trigger events, batch events, list channels, channel info
-- User sign-in (`pusher.signin()`) and events sent to one user
+- User sign-in (`pusher.signin()`), events sent to one user, and closing a user's
+  connections when they log out
 - Signed webhooks with retries, optionally kept on disk across restarts
 - Several apps (id, key, secret) in one server, fully isolated
 - Allowed origins, optional rate limits, connection caps (also per IP), built-in TLS, and Prometheus metrics
@@ -88,7 +89,7 @@ the whole thing.
 
 ```elixir
 # mix.exs
-{:socketelx, "~> 0.5"}
+{:socketelx, "~> 0.4"}
 
 # lib/my_app/application.ex
 children = [
@@ -172,8 +173,7 @@ Not verified yet: behaviour at very large scale (see
 [Load testing](guides/load-testing.md) to measure your own), the Compose/nginx
 example, and Elixir versions other than the ones CI uses.
 
-Not implemented: terminating a user's connections through the API, the sign-in
-watchlist. Delivery is at-most-once, like Pusher. Details in [Protocol support](guides/protocol-support.md).
+Not implemented: the sign-in watchlist. Delivery is at-most-once, like Pusher. Details in [Protocol support](guides/protocol-support.md).
 
 ## Development and contributing
 

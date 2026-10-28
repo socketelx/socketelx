@@ -76,6 +76,41 @@ defmodule Socketelx.ClusterRedisTest do
     assert_receive {:ws, ^cb, %{"event" => "y"}}
   end
 
+  test "terminating a user's connections through node B closes their socket on node A", %{
+    app_id: app_id
+  } do
+    a = start_node(:a, app_id)
+    b = start_node(:b, app_id)
+
+    {ca, sid_a} = connect(a)
+    {cb, sid_b} = connect(b)
+
+    for {client, sid, id} <- [{ca, sid_a, "7"}, {cb, sid_b, "8"}] do
+      %{auth: auth, user_data: user_data} = Socketelx.authenticate_user(n(a), sid, %{id: id})
+
+      TestWsClient.send_json(client, %{
+        event: "pusher:signin",
+        data: %{auth: auth, user_data: user_data}
+      })
+
+      assert_receive {:ws, ^client, %{"event" => "pusher:signin_success"}}
+    end
+
+    assert {200, _} =
+             http(
+               :post,
+               elem(b, 1),
+               "/apps/#{app_id}/users/7/terminate_connections",
+               %{
+                 "body_md5" => :crypto.hash(:md5, "{}") |> Base.encode16(case: :lower)
+               },
+               "{}"
+             )
+
+    assert_receive {:ws_closed, ^ca}, 2_000
+    refute_receive {:ws_closed, ^cb}, 300
+  end
+
   test "exclude_socket_id is honoured for sockets on other nodes", %{app_id: app_id} do
     a = start_node(:a, app_id)
     b = start_node(:b, app_id)

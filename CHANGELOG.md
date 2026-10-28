@@ -4,6 +4,13 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/), versioning
 follows [Semantic Versioning](https://semver.org/).
 
+## [0.5.2] - 2026-10-28
+
+### Added
+- **Terminate a user's connections** (`POST /apps/:app_id/users/:user_id/terminate_connections`,
+  or `Socketelx.terminate_user_connections/3`). Closes every connection of a signed-in user
+  on every node, for logout or a ban. Works across Redis and Erlang cluster nodes.
+
 ## [0.5.1] - 2026-10-23
 
 ### Fixed

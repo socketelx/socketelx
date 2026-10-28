@@ -30,6 +30,22 @@ defmodule Socketelx.Cluster do
     :ok
   end
 
+  @terminate_message ~s({"event":"pusher_internal:terminate_connection"})
+
+  @doc false
+  # A control message, not an event: connections that receive it close themselves. It is
+  # recognised by being exactly this string, which no event sent through `trigger/5` or the
+  # REST API can produce (those always carry `channel` and `data` as well).
+  def terminate_message, do: @terminate_message
+
+  @doc """
+  Closes every connection of `user_id` on every node (the user must have signed in
+  with `pusher:signin`). Returns `:ok` whether or not the user is connected.
+  """
+  def terminate_user(name, user_id) do
+    broadcast(name, "#server-to-user-" <> to_string(user_id), @terminate_message)
+  end
+
   @doc "Delivers to this node's subscribers only. Used for messages that arrived from other nodes."
   def local_dispatch(name, channel, encoded, exclude_socket_id) do
     Registry.dispatch(Naming.registry(name), channel, fn entries ->

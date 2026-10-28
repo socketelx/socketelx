@@ -170,6 +170,22 @@ defmodule Socketelx do
   end
 
   @doc """
+  Closes every connection of a signed-in user, on every node. Use it when a user logs out
+  or is banned. Clients are not told why; they just see the socket close (and pusher-js
+  reconnects, but cannot sign in again without a fresh `authenticate_user/4`).
+
+      Socketelx.terminate_user_connections(MyApp.Socketelx, "42")
+
+  The REST equivalent is `POST /apps/:app_id/users/:user_id/terminate_connections`.
+  Connections that never signed in cannot be found by user id. On a multi-app server pass
+  `app: "<app id>"`.
+  """
+  @spec terminate_user_connections(atom(), String.t() | integer(), keyword()) :: :ok
+  def terminate_user_connections(name, user_id, opts \\ []) do
+    Socketelx.Cluster.terminate_user(Apps.fetch!(name, Keyword.get(opts, :app)), user_id)
+  end
+
+  @doc """
   Signs a client's request to join a private or presence channel and returns
   the map your auth endpoint should reply with as JSON.
 

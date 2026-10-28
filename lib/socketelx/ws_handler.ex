@@ -17,6 +17,7 @@ defmodule Socketelx.WsHandler do
   alias Socketelx.{Apps, Auth, Cluster, Config, Metrics, Naming, RateLimiter, Webhook}
 
   @all_connections :__all_connections__
+  @terminate_message Socketelx.Cluster.terminate_message()
   # Clients are told to ping after this many seconds of silence. The server
   # only closes a socket after *twice* that, so a healthy-but-quiet client
   # (whose ping is due right at `@activity_timeout_s`) never races the
@@ -138,6 +139,9 @@ defmodule Socketelx.WsHandler do
 
   # Delivery from the HTTP trigger endpoint, a client event, or another node
   @impl :cowboy_websocket
+  # `POST /apps/:id/users/:user_id/terminate_connections` (see Socketelx.Cluster.terminate_user/2)
+  def websocket_info({:broadcast, @terminate_message, _exclude}, state), do: {:stop, state}
+
   def websocket_info({:broadcast, message, exclude}, state) do
     if excluded?(state, exclude) do
       {:ok, state}

@@ -31,7 +31,7 @@ defmodule Socketelx.MultiAppTest do
     )
   end
 
-  defp open(port, key, headers) do
+  defp open(port, key, headers \\ []) do
     {:ok, client} = TestWsClient.start(port, key, self(), headers: headers)
     client
   end
@@ -263,6 +263,79 @@ defmodule Socketelx.MultiAppTest do
 
     assert {400, _} = rest(port, app, :get, "/apps/one/channels/plain/users")
     assert {401, _} = rest(port, {"k1", "wrong"}, :get, "/apps/one/channels/presence-room/users")
+  end
+
+  # ---- terminating a user's connections ----
+
+  defp sign_in(name, c, sid, id) do
+    %{auth: auth, user_data: user_data} = Socketelx.authenticate_user(name, sid, %{id: id})
+
+    TestWsClient.send_json(c, %{event: "pusher:signin", data: %{auth: auth, user_data: user_data}})
+
+    assert_receive {:ws, ^c, %{"event" => "pusher:signin_success"}}
+  end
+
+  test "terminate_connections closes every connection of that user and nobody else's" do
+    {name, port} = single()
+    {a1, sid_a1} = connect(port, "k1")
+    {a2, sid_a2} = connect(port, "k1")
+    {b, sid_b} = connect(port, "k1")
+    {anon, _} = connect(port, "k1")
+    sign_in(name, a1, sid_a1, "7")
+    sign_in(name, a2, sid_a2, "7")
+    sign_in(name, b, sid_b, "8")
+
+    assert {200, _} =
+             rest(port, {"k1", "s1"}, :post, "/apps/one/users/7/terminate_connections", "{}")
+
+    assert_receive {:ws_closed, ^a1}, 2_000
+    assert_receive {:ws_closed, ^a2}, 2_000
+    refute_receive {:ws_closed, ^b}, 300
+    refute_receive {:ws_closed, ^anon}, 100
+
+    # the other user can still be reached, and a user who is not connected is not an error
+    assert {200, _} = trigger(port, {"k1", "s1"}, "one", "#server-to-user-8", "still-here")
+    assert_receive {:ws, ^b, %{"event" => "still-here"}}
+
+    assert {200, _} =
+             rest(port, {"k1", "s1"}, :post, "/apps/one/users/999/terminate_connections", "{}")
+  end
+
+  test "terminate_connections needs a valid signature" do
+    {name, port} = single()
+    {c, sid} = connect(port, "k1")
+    sign_in(name, c, sid, "7")
+
+    assert {401, _} =
+             rest(port, {"k1", "wrong"}, :post, "/apps/one/users/7/terminate_connections", "{}")
+
+    refute_receive {:ws_closed, ^c}, 300
+  end
+
+  test "Socketelx.terminate_user_connections/3 does the same from Elixir code" do
+    {name, port} = single()
+    {c, sid} = connect(port, "k1")
+    sign_in(name, c, sid, "7")
+
+    assert :ok = Socketelx.terminate_user_connections(name, "7")
+    assert_receive {:ws_closed, ^c}, 2_000
+  end
+
+  test "the control message cannot be forged through the trigger endpoint" do
+    {name, port} = single()
+    {c, sid} = connect(port, "k1")
+    sign_in(name, c, sid, "7")
+
+    body =
+      Jason.encode!(%{
+        name: "pusher_internal:terminate_connection",
+        channels: ["#server-to-user-7"],
+        data: "{}"
+      })
+
+    assert {200, _} = rest(port, {"k1", "s1"}, :post, "/apps/one/events", body)
+    assert_receive {:ws, ^c, %{"event" => "pusher_internal:terminate_connection"}}
+    refute_receive {:ws_closed, ^c}, 300
   end
 
   # ---- user sign-in ----
